@@ -1,1 +1,304 @@
+// ex1_ir_led.ino
+// IR sensor drives LED on ESP32
+#define LED_PIN 18
+#define IR_PIN 14
 
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(IR_PIN, INPUT);
+}
+
+void loop() {
+  int irState = digitalRead(IR_PIN);
+  if (irState == LOW) {
+    digitalWrite(LED_PIN, HIGH);
+  } else {
+    digitalWrite(LED_PIN, LOW);
+  }
+  delay(300);
+}
+
+
+//EX2-Pi camera
+from picamera import PiCamera
+import RPi.GPIO as GPIO
+import time
+import os
+
+PIR_PIN = 17
+SAVE_DIR = '/home/pi/Pictures/iot_captures'
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+camera = PiCamera()
+camera.resolution = (1280, 720)
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(PIR_PIN, GPIO.IN)
+
+try:
+    while True:
+        if GPIO.input(PIR_PIN):
+            timestamp = int(time.time())
+            fname = f"{SAVE_DIR}/photo_{timestamp}.jpg"
+            camera.capture(fname)
+            time.sleep(2)
+        time.sleep(0.1)
+except KeyboardInterrupt:
+    pass
+finally:
+    camera.close()
+    GPIO.cleanup()
+
+//EX3-RPi GPIO
+from gpiozero import LED, DigitalInputDevice
+from time import sleep
+
+ir_sensor = DigitalInputDevice(4)
+led = LED(18)
+
+try:
+    while True:
+        if ir_sensor.is_active:
+            led.off()
+        else:
+            led.on()
+        sleep(0.5)
+except KeyboardInterrupt:
+    led.off()
+
+//EX4-RGB LED sensor
+// ex4_digital_io.ino for ESP32
+const int Rpin = 16;
+const int Gpin = 17;
+const int Bpin = 18;
+const int PIRpin = 19;
+const int SLOTpin = 21;
+
+void setup() {
+  pinMode(PIRpin, INPUT);
+  pinMode(SLOTpin, INPUT);
+  // PWM channels for RGB
+  ledcSetup(0, 5000, 8);
+  ledcSetup(1, 5000, 8);
+  ledcSetup(2, 5000, 8);
+  ledcAttachPin(Rpin, 0);
+  ledcAttachPin(Gpin, 1);
+  ledcAttachPin(Bpin, 2);
+}
+
+void setColor(int r, int g, int b) {
+  ledcWrite(0, r);
+  ledcWrite(1, g);
+  ledcWrite(2, b);
+}
+
+void loop() {
+  int pir = digitalRead(PIRpin);
+  int slot = digitalRead(SLOTpin);
+
+  if (pir == HIGH) {
+    setColor(255, 80, 0);
+  } else {
+    setColor(0, 0, 0);
+  }
+
+  if (slot == LOW) {
+    setColor(0, 0, 255);
+    delay(150);
+    setColor(0, 0, 0);
+    delay(150);
+  }
+
+  delay(300);
+}
+
+//EX5-Potentiometer led brightness
+// ex5_analog_io.ino (ESP32)
+const int potPin = 34;   // ADC1_CH6
+const int lm35Pin = 36;  // ADC1_CH0
+const int ledPin = 16;
+
+void setup() {
+  // ADC attenuation optional; comment out if not needed
+  analogSetPinAttenuation(potPin, ADC_11db);
+  analogSetPinAttenuation(lm35Pin, ADC_11db);
+  ledcSetup(0, 5000, 8);
+  ledcAttachPin(ledPin, 0);
+}
+
+void loop() {
+  int potRaw = analogRead(potPin);        // 0 - 4095
+  int pwmVal = map(potRaw, 0, 4095, 0, 255);
+  ledcWrite(0, pwmVal);
+
+  int lmRaw = analogRead(lm35Pin);
+  float milliVolt = lmRaw * (3300.0 / 4096.0);
+  float tempC = milliVolt / 10.0;         // LM35: 10mV per °C
+
+  (void)tempC; // keep variable referenced; no printing per request
+  delay(500);
+}
+
+//EX6- I2c
+// i2c_slave.ino for Arduino UNO
+#include <Wire.h>
+const int ledPin = 13;
+
+void setup() {
+  Wire.begin(0x08);           // I2C address 0x08
+  Wire.onReceive(receiveEvent);
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
+}
+
+void receiveEvent(int howMany) {
+  while (Wire.available()) {
+    byte b = Wire.read();
+    if (b == 1) digitalWrite(ledPin, HIGH);
+    else digitalWrite(ledPin, LOW);
+  }
+}
+
+void loop() {
+  delay(100);
+}
+
+EX7- Wifi connect
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+const char* ssid = "YOUR_SSID";
+const char* password = "YOUR_PASS";
+
+void setup() {
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+}
+
+void loop() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin("http://192.168.x.y:8000/get-sensor?temperature=243"); // change IP
+    http.GET(); // response ignored (per request to remove prints)
+    http.end();
+  }
+  delay(10000);
+}
+
+//EX8-MQT
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+const char* ssid = "YOUR_SSID";
+const char* password = "YOUR_PASS";
+const char* mqtt_server = "192.168.x.y"; // local broker IP
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  // minimal: no processing, per request to remove commands
+  (void)topic; (void)payload; (void)length;
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    client.connect("ESP32Client");
+    delay(200);
+  }
+}
+
+void setup() {
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+}
+
+void loop() {
+  if (!client.connected()) reconnect();
+  client.loop();
+
+  static unsigned long last = 0;
+  if (millis() - last > 5000) {
+    last = millis();
+    int sensorVal = analogRead(34);
+    char payload[32];
+    snprintf(payload, sizeof(payload), "{\"sensor\":%d}", sensorVal);
+    client.publish("ESP32/Temperaturedataread", payload);
+  }
+  delay(10);
+}
+
+//EX9-MQTT web broker
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+const char* ssid = "YOUR_SSID";
+const char* password = "YOUR_PASS";
+const char* mqtt_server = "test.mosquitto.org";// local broker IP
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  // minimal: no processing, per request to remove commands
+  (void)topic; (void)payload; (void)length;
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    client.connect("ESP32Client");
+    delay(200);
+  }
+}
+
+void setup() {
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+}
+
+void loop() {
+  if (!client.connected()) reconnect();
+  client.loop();
+
+  static unsigned long last = 0;
+  if (millis() - last > 5000) {
+    last = millis();
+    int sensorVal = analogRead(34);
+    char payload[32];
+    snprintf(payload, sizeof(payload), "{\"sensor\":%d}", sensorVal);
+    client.publish("ESP32/Temperaturedataread", payload);
+  }
+  delay(10);
+}
+
+//EX10- Push sensor REST
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+const char* ssid = "YOUR_SSID";
+const char* password = "YOUR_PASS";
+String firebaseURL = "https://<YOUR_DB>.firebaseio.com/sensor.json";
+
+void setup() {
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+}
+
+void loop() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    int sensorValue = analogRead(34);
+    String payload = "{\"value\":" + String(sensorValue) + "}";
+    http.begin(firebaseURL);
+    http.addHeader("Content-Type", "application/json");
+    http.POST(payload);
+    http.end();
+  }
+  delay(5000);
+}
