@@ -302,3 +302,432 @@ void loop() {
   }
   delay(5000);
 }
+----------------------------------------------------------------------------------
+// ex1_ir_led.ino
+// IR sensor drives LED on ESP32
+// Wiring: IR module OUT -> GPIO14, LED (with resistor) -> GPIO18 -> GND
+
+#define LED_PIN 18
+#define IR_PIN 14
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(IR_PIN, INPUT);
+  digitalWrite(LED_PIN, LOW);
+  Serial.println("EX1: IR -> LED started");
+}
+
+void loop() {
+  int irState = digitalRead(IR_PIN); // many IR modules give LOW when object detected
+  if (irState == LOW) {
+    digitalWrite(LED_PIN, HIGH);
+    Serial.println("IR: Object detected -> LED ON");
+  } else {
+    digitalWrite(LED_PIN, LOW);
+    // Serial.println("IR: No object -> LED OFF");
+  }
+  delay(300);
+}
+
+
+# ex2_pi_camera_pir.py
+# Capture photo when PIR detects motion using Picamera2 (modern Pi OS)
+# Wiring: PIR VCC->5V, GND->GND, OUT -> GPIO11 (BOARD) or choose BCM pin and change mode.
+
+from picamera2 import Picamera2
+from libcamera import Transform
+import RPi.GPIO as GPIO
+import time
+import os
+
+# Choose pin mode. Using BOARD numbering here for example (pin 11).
+PIR_PIN = 11          # BOARD pin number; change to your wiring (or use BCM and set mode)
+SAVE_DIR = '/home/pi/Pictures/iot_captures'
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+picam = Picamera2()
+config = picam.create_still_configuration()
+picam.configure(config)
+
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BOARD)
+GPIO.setup(PIR_PIN, GPIO.IN)
+
+print("EX2: Pi camera + PIR ready. Waiting for motion...")
+try:
+    picam.start()
+    while True:
+        # PIR modules commonly output LOW on detection or HIGH on detection depending on type.
+        # Check your module: adjust condition below accordingly.
+        if GPIO.input(PIR_PIN) == 0:  # change to ==1 if your PIR outputs HIGH when motion detected
+            ts = int(time.time())
+            fname = f"{SAVE_DIR}/photo_{ts}.jpg"
+            print("Motion detected, capturing:", fname)
+            picam.capture_file(fname)
+            time.sleep(2)    # debounce / avoid multiple immediate captures
+        time.sleep(0.1)
+except KeyboardInterrupt:
+    print("Exiting.")
+finally:
+    picam.close()
+    GPIO.cleanup()
+
+
+# ex3_rpi_ir_gpio.py
+# Simple IR (digital sensor) -> LED using gpiozero
+# Wiring: IR OUT -> BCM 4, LED + resistor -> BCM 18 -> GND
+
+from gpiozero import LED, DigitalInputDevice
+from time import sleep
+
+ir_sensor = DigitalInputDevice(4)   # BCM 4
+led = LED(18)                       # BCM 18
+
+print("EX3: IR->LED ready")
+try:
+    while True:
+        if ir_sensor.is_active:   # active when no obstacle depending on sensor type
+            led.off()
+        else:
+            led.on()
+        sleep(0.5)
+except KeyboardInterrupt:
+    led.off()
+    print("Stopped")
+
+
+// ex4_digital_io.ino
+// RGB LED with PIR and slot sensor on ESP32
+// Wiring example:
+// R -> GPIO16, G -> GPIO17, B -> GPIO18 (with common cathode and resistors)
+// PIR -> GPIO19, Slot sensor -> GPIO21
+
+const int Rpin = 16;
+const int Gpin = 17;
+const int Bpin = 18;
+const int PIRpin = 19;
+const int SLOTpin = 21;
+
+// LEDC PWM channels and settings
+const int CH_R = 0;
+const int CH_G = 1;
+const int CH_B = 2;
+const int PWM_FREQ = 5000;
+const int PWM_RES = 8; // 8-bit -> 0-255
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(PIRpin, INPUT);
+  pinMode(SLOTpin, INPUT);
+
+  ledcSetup(CH_R, PWM_FREQ, PWM_RES);
+  ledcSetup(CH_G, PWM_FREQ, PWM_RES);
+  ledcSetup(CH_B, PWM_FREQ, PWM_RES);
+  ledcAttachPin(Rpin, CH_R);
+  ledcAttachPin(Gpin, CH_G);
+  ledcAttachPin(Bpin, CH_B);
+
+  setColor(0,0,0);
+  Serial.println("EX4: RGB+PIR+Slot initialized");
+}
+
+void setColor(int r, int g, int b) {
+  ledcWrite(CH_R, r);
+  ledcWrite(CH_G, g);
+  ledcWrite(CH_B, b);
+}
+
+void loop() {
+  int pir = digitalRead(PIRpin);
+  int slot = digitalRead(SLOTpin);
+
+  // Motion -> warm color
+  if (pir == HIGH) {
+    setColor(255, 80, 0);
+    Serial.println("PIR detected -> warm color ON");
+  } else {
+    setColor(0,0,0);
+  }
+
+  // If slot sensor triggered (LOW assumed when object present)
+  if (slot == LOW) {
+    // Flash blue 3 times
+    for (int i=0;i<3;i++){
+      setColor(0,0,255);
+      delay(150);
+      setColor(0,0,0);
+      delay(150);
+    }
+    Serial.println("Slot sensor triggered -> flashing blue");
+  }
+
+  delay(300);
+}
+
+
+// ex5_analog_io.ino
+// Potentiometer to PWM LED, LM35 temperature reading on ESP32
+// Wiring:
+// Pot wiper -> GPIO34 (ADC1_CH6)
+// LM35 Vout -> GPIO36 (ADC1_CH0) (input-only pins)
+// LED PWM -> GPIO16 (with resistor)
+
+const int potPin = 34;
+const int lm35Pin = 36;
+const int ledPin = 16;
+
+void setup() {
+  Serial.begin(115200);
+  // analogSetPinAttenuation may not be supported on older cores -> uncomment if supported
+  // analogSetPinAttenuation(potPin, ADC_11db);
+  // analogSetPinAttenuation(lm35Pin, ADC_11db);
+
+  ledcSetup(0, 5000, 8); // channel 0, freq 5kHz, 8-bit resolution
+  ledcAttachPin(ledPin, 0);
+  Serial.println("EX5: Analog IO (Pot + LM35) ready");
+}
+
+void loop() {
+  int potRaw = analogRead(potPin);           // 0 - 4095
+  int pwmVal = map(potRaw, 0, 4095, 0, 255);
+  ledcWrite(0, pwmVal);
+
+  int lmRaw = analogRead(lm35Pin);           // ADC raw
+  float milliVolt = lmRaw * (3300.0 / 4096.0);
+  float tempC = milliVolt / 10.0;            // LM35: 10 mV/°C
+
+  Serial.print("PotRaw: "); Serial.print(potRaw);
+  Serial.print(" PWM: "); Serial.print(pwmVal);
+  Serial.print("  LM35 ADC: "); Serial.print(lmRaw);
+  Serial.print(" TempC: "); Serial.println(tempC);
+
+  delay(500);
+}
+
+
+// i2c_slave.ino6// ex7_esp32_http_get.ino
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+const char* ssid = "YOUR_SSID";
+const char* password = "YOUR_PASS";
+// Example Pi Flask endpoint: http://192.168.1.50:8000/get-sensor?temperature=243
+const char* serverURL = "http://192.168.x.y:8000/get-sensor?temperature=243";
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.print("Connected. IP: "); Serial.println(WiFi.localIP());
+}
+
+void loop() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin(serverURL);
+    int httpCode = http.GET();
+    if (httpCode > 0) {
+      Serial.print("HTTP GET code: "); Serial.println(httpCode);
+      // You can read response if needed: http.getString();
+    } else {
+      Serial.print("HTTP GET failed, error: "); Serial.println(httpCode);
+    }
+    http.end();
+  }
+  delay(10000);
+}
+
+#include <Wire.h>
+const int ledPin = 13;
+
+void receiveEvent(int howMany) {
+  while (Wire.available()) {
+    byte b = Wire.read();
+    // teacher's original style: treat non-zero as HIGH
+    if (b == 1) digitalWrite(ledPin, HIGH);
+    else digitalWrite(ledPin, LOW);
+  }
+}
+
+void setup() {
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
+  Wire.begin(0x08);           // join I2C bus with address 0x08
+  Wire.onReceive(receiveEvent);
+}
+
+void loop() {
+  delay(100);
+}
+
+
+
+// ex8_esp32_mqtt_local.ino
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+const char* ssid = "YOUR_SSID";
+const char* password = "YOUR_PASS";
+const char* mqtt_server = "192.168.x.y"; // put your Mosquitto broker IP
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  // This example doesn't subscribe to commands; callback present for completeness
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (unsigned int i = 0; i < length; i++) Serial.print((char)payload[i]);
+  Serial.println();
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    if (client.connect("ESP32Client")) {
+      Serial.println("connected");
+      // client.subscribe("some/topic"); // subscribe if needed
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 2 seconds");
+      delay(2000);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
+  Serial.println();
+  Serial.print("WiFi IP: "); Serial.println(WiFi.localIP());
+
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+}
+
+void loop() {
+  if (!client.connected()) reconnect();
+  client.loop();
+
+  static unsigned long last = 0;
+  if (millis() - last > 5000) {
+    last = millis();
+    int sensorVal = analogRead(34);
+    char payload[64];
+    snprintf(payload, sizeof(payload), "{\"sensor\":%d}", sensorVal);
+    client.publish("ESP32/Temperaturedataread", payload);
+    Serial.print("Published: "); Serial.println(payload);
+  }
+}
+
+
+// ex9_esp32_mqtt_public.ino
+#include <WiFi.h>
+#include <PubSubClient.h>
+
+const char* ssid = "YOUR_SSID";
+const char* password = "YOUR_PASS";
+const char* mqtt_server = "test.mosquitto.org";
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived ["); Serial.print(topic); Serial.print("] ");
+  for (unsigned int i = 0; i < length; i++) Serial.print((char)payload[i]);
+  Serial.println();
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    if (client.connect("ESP32ClientPub")) {
+      Serial.println("connected to public broker");
+      // client.subscribe("some/topic");
+    } else {
+      Serial.print("failed, rc="); Serial.println(client.state());
+      delay(2000);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+}
+
+void loop() {
+  if (!client.connected()) reconnect();
+  client.loop();
+
+  static unsigned long last = 0;
+  if (millis() - last > 5000) {
+    last = millis();
+    int sensorValue = analogRead(34);
+    char msg[32];
+    snprintf(msg, sizeof(msg), "%d", sensorValue);
+    client.publish("iot/lab/ex9", msg);
+    Serial.print("Published to iot/lab/ex9: "); Serial.println(msg);
+  }
+}
+
+
+// ex10_esp32_thingspeak.ino
+#include <WiFi.h>
+#include "ThingSpeak.h"
+
+#define PIN_LM35 35
+const char* ssid = "YOUR_SSID";
+const char* password = "YOUR_PASS";
+
+WiFiClient client;
+unsigned long myChannelNumber = YOUR_CHANNEL_NUMBER; // e.g., 123456
+const char * myWriteAPIKey = "YOUR_WRITE_API_KEY";
+
+unsigned long lastTime = 0;
+unsigned long timerDelay = 15000; // 15 seconds interval
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting WiFi");
+  while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
+  Serial.println();
+  Serial.print("WiFi IP: "); Serial.println(WiFi.localIP());
+
+  ThingSpeak.begin(client);
+}
+
+void loop() {
+  if ((millis() - lastTime) > timerDelay) {
+    int adcVal = analogRead(PIN_LM35);
+    float milliVolt = adcVal * (3300.0 / 4096.0);
+    float tempC = milliVolt / 10.0;
+
+    Serial.print("LM35 ADC: "); Serial.print(adcVal);
+    Serial.print(" TempC: "); Serial.println(tempC);
+
+    int response = ThingSpeak.writeField(myChannelNumber, 1, tempC, myWriteAPIKey);
+    if (response == 200) {
+      Serial.println("ThingSpeak update successful.");
+    } else {
+      Serial.print("ThingSpeak update failed. HTTP code: ");
+      Serial.println(response);
+    }
+    lastTime = millis();
+  }
+}
+------------------------------------
